@@ -1,234 +1,727 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import pandas as pd
-import os
+from flask import Flask, render_template, request, redirect, url_for
+from datetime import datetime
+import os, pandas as pd
 
-# Excel file path
-EXCEL_FILE = r'C:\LocalDB\CKENG.xlsx'
+#EXCEL_FILE = r'C:\LocalDB\CKENG.xlsx'
+EXCEL_FILE = 'LocalDB.xlsx'
 
-# Helper function to read a sheet from the Excel file
 def read_data(sheet_name):
     if os.path.exists(EXCEL_FILE):
         try:
             df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name)
         except Exception as e:
-            print(f"Error reading {sheet_name}:", e)
+            print(f"Error reading {sheet_name}: {e}")
             df = pd.DataFrame()
     else:
         df = pd.DataFrame()
     return df
 
-# ---------------------------
-# Frame 1: List of CUs (Main Page)
-# ---------------------------
-class CUListFrame(tk.Frame):
-    def __init__(self, parent, controller):
-        super().__init__(parent)
-        self.controller = controller
-        
-        # Main title centered at the top
-        title = tk.Label(self, text="List of CUs", font=("Arial", 24))
-        title.pack(pady=20)
-        
-        # Center the listbox with more padding
-        self.cu_listbox = tk.Listbox(self, font=("Helvetica", 16), width=40, height=10)
-        self.cu_listbox.pack(fill="both", expand=True, padx=50, pady=20)
-        self.cu_listbox.bind("<<ListboxSelect>>", self.on_cu_select)
-        
-        self.load_cus()
+app = Flask(__name__)
 
-    def load_cus(self):
-        df_cu = read_data("CU")
-        self.cu_listbox.delete(0, tk.END)
-        self.cu_data = df_cu.to_dict(orient='records')
-        for cu in self.cu_data:
-            display = f"{cu.get('CU_Name', 'N/A')} - {cu.get('Location', 'Unknown')}"
-            self.cu_listbox.insert(tk.END, display)
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        raise RuntimeError("Not running with the Werkzeug Server")
+    func()
+    return "Shutting down"
 
-    def on_cu_select(self, event):
-        if not self.cu_listbox.curselection():
-            return
-        index = self.cu_listbox.curselection()[0]
-        selected_cu = self.cu_data[index]
-        self.controller.show_cu_details(selected_cu)
+@app.route('/')
+def cu_list():
+    df_cu = read_data("CU")
+    cu_data = df_cu.to_dict(orient='records')
+    return render_template('READ pages/cu_list.html', cu_data=cu_data)
 
-# ---------------------------
-# Frame 2: CU Details (Shows Parts and FCUs)
-# ---------------------------
-class CUDetailsFrame(tk.Frame):
-    def __init__(self, parent, controller):
-        super().__init__(parent)
-        self.controller = controller
-        
-        # Selected CU info at the top
-        self.cu_info_label = tk.Label(self, text="", font=("Arial", 20))
-        self.cu_info_label.pack()
+# =============================================================================
+#  CREATE 
+# =============================================================================
 
-        self.cu_location_label = tk.Label(self, text="", font=("Arial", 20))
-        self.cu_location_label.pack(pady=20)
-        
-        # Content frame with two panels
-        content_frame = tk.Frame(self)
-        content_frame.pack(fill="both", expand=True, padx=50, pady=20)
-        
-        # Left Panel: CU Parts list
-        left_frame = tk.Frame(content_frame)
-        left_frame.pack(side="left", fill="both", expand=True, padx=20)
-        
-        tk.Label(left_frame, text="CU Parts", font=("Arial", 18)).pack(pady=10)
-        self.parts_listbox = tk.Listbox(left_frame, font=("Helvetica", 16), width=25, height=8)
-        self.parts_listbox.pack(fill="both", expand=True, pady=10)
-        self.parts_listbox.bind("<Double-Button-1>", self.on_part_double_click)
-        
-        # Right Panel: FCUs list
-        right_frame = tk.Frame(content_frame)
-        right_frame.pack(side="right", fill="both", expand=True, padx=20)
-        tk.Label(right_frame, text="FCUs", font=("Arial", 18)).pack(pady=10)
-        self.fcu_listbox = tk.Listbox(right_frame, font=("Helvetica", 16), width=25, height=8)
-        self.fcu_listbox.pack(fill="both", expand=True, pady=10)
-        self.fcu_listbox.bind("<<ListboxSelect>>", self.on_fcu_select)
-        
-        # Back Button centered at the bottom
-        back_btn = tk.Button(self, text="Back", font=("Arial", 16),
-                             command=lambda: controller.show_frame("CUListFrame"))
-        back_btn.pack(pady=20)
+@app.route('/create_cu', methods=['GET', 'POST'])
+def create_cu():
+    if request.method == 'POST':
+        cu_name     = request.form['cu_name']
+        cu_location = request.form['cu_location']
 
-    def set_cu(self, cu):
-        self.selected_cu = cu
-        self.cu_info_label.config(text=f"CU: {cu.get('CU_Name', 'N/A')}")
-        self.cu_location_label.config(text=f"Location: {cu.get('Location', 'Unknown')}")
-        # Load parts for the selected CU
-        df_parts = read_data("CU_Parts")
-        parts = df_parts[df_parts['CU_ID'] == cu.get('CU_ID')].to_dict(orient='records')
-        self.parts_data = parts
-        self.parts_listbox.delete(0, tk.END)
-        for part in parts:
-            display = f"{part.get('Part_Name', 'Unnamed')}"
-            self.parts_listbox.insert(tk.END, display)
-        
-        # Load FCUs for the selected CU
-        df_fcus = read_data("FCU")
-        fcus = df_fcus[df_fcus['CU_ID'] == cu.get('CU_ID')].to_dict(orient='records')
-        self.fcu_data = fcus
-        self.fcu_listbox.delete(0, tk.END)
-        for fcu in fcus:
-            display = f"{fcu.get('FCU_Name', 'Unnamed')}"
-            self.fcu_listbox.insert(tk.END, display)
+        if not os.path.exists(EXCEL_FILE):
+            return "Excel file does not exist.", 404
 
-    def on_part_double_click(self, event):
-        if not self.parts_listbox.curselection():
-            return
-        index = self.parts_listbox.curselection()[0]
-        selected_part = self.parts_data[index]
-        self.controller.show_cupart_details(selected_part)
+        try:
+            df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
 
-    def on_fcu_select(self, event):
-        if not self.fcu_listbox.curselection():
-            return
-        index = self.fcu_listbox.curselection()[0]
-        selected_fcu = self.fcu_data[index]
-        self.controller.show_fcu_details(selected_fcu)
+            if not df_cu.empty:
+                nums = (
+                    df_cu['CU_ID']
+                      .str.extract(r'CU(\d+)', expand=False)
+                      .astype(int)
+                )
+                new_num = nums.max() + 1
+            else:
+                new_num = 1
 
-# ---------------------------
-# Frame 3: FCU Activities (Details for selected FCU)
-# ---------------------------
-class FCUActivitiesFrame(tk.Frame):
-    def __init__(self, parent, controller):
-        super().__init__(parent)
-        self.controller = controller
-        
-        self.fcu_info_label = tk.Label(self, text="", font=("Arial", 20))
-        self.fcu_info_label.pack(pady=20)
-        
-        tk.Label(self, text="FCU Activities", font=("Arial", 18)).pack(pady=10)
-        self.fcu_act_listbox = tk.Listbox(self, font=("Helvetica", 16), width=40, height=10)
-        self.fcu_act_listbox.pack(fill="both", expand=True, padx=50, pady=20)
-        
-        back_btn = tk.Button(self, text="Back", font=("Arial", 16),
-                             command=lambda: controller.show_frame("CUDetailsFrame"))
-        back_btn.pack(pady=20)
-        
-    def set_fcu(self, fcu):
-        self.selected_fcu = fcu
-        self.fcu_info_label.config(text=f"FCU: {fcu.get('FCU_Name', 'Unnamed')}")
-        df_activities = read_data("FCU_Activity")
-        acts = df_activities[df_activities['FCU_ID'] == fcu.get('FCU_ID')].to_dict(orient='records')
-        self.fcu_act_listbox.delete(0, tk.END)
-        for act in acts:
-            display = f"{act.get('Activity_Name', 'Unnamed')} on {act.get('Activity_Date', '')}"
-            self.fcu_act_listbox.insert(tk.END, display)
+            new_cu_id = f"CU{new_num:03}"  
 
-# ---------------------------
-# Frame 4: CU Part Activities (Details for selected CU Part)
-# ---------------------------
-class CUPartActivitiesFrame(tk.Frame):
-    def __init__(self, parent, controller):
-        super().__init__(parent)
-        self.controller = controller
+            new_cu = pd.DataFrame({
+                'CU_ID':   [new_cu_id],
+                'CU_Name': [cu_name],
+                'Location':[cu_location]
+            })
+            df_cu = pd.concat([df_cu, new_cu], ignore_index=True)
 
-        self.part_info_label = tk.Label(self, text="", font=("Arial", 20))
-        self.part_info_label.pack(pady=20)
+            with pd.ExcelWriter(EXCEL_FILE,
+                                engine='openpyxl',
+                                mode='a',
+                                if_sheet_exists='replace') as writer:
+                df_cu.to_excel(writer, sheet_name='CU', index=False)
 
-        tk.Label(self, text="CU Part Activities", font=("Arial", 18)).pack(pady=10)
-        self.part_act_listbox = tk.Listbox(self, font=("Helvetica", 16), width=40, height=10)
-        self.part_act_listbox.pack(fill="both", expand=True, padx=50, pady=20)
+            return redirect(url_for('cu_list'))
 
-        back_btn = tk.Button(self, text="Back", font=("Arial", 16),
-                             command=lambda: controller.show_frame("CUDetailsFrame"))
-        back_btn.pack(pady=20)
+        except PermissionError:
+            return "Permission denied. Please ensure the file is closed and writable."
+        except Exception as e:
+            return f"An error occurred: {e}"
 
-    def set_part(self, part):
-        self.selected_part = part
-        self.part_info_label.config(text=f"Part: {part.get('Part_Name', 'Unnamed')}")
-        df_activities = read_data("CU_Parts_Activity")
-        acts = df_activities[df_activities['Part_ID'] == part.get('Part_ID')].to_dict(orient='records')
-        self.part_act_listbox.delete(0, tk.END)
-        for act in acts:
-            display = f"{act.get('Activity_Name', 'Unnamed')} on {act.get('Activity_Date', '')}"
-            self.part_act_listbox.insert(tk.END, display)
+    return render_template('CREATE pages/create_cu.html')
 
-# ---------------------------
-# Main Application: Manages Navigation Among Frames
-# ---------------------------
-class MainApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("CKEng Management App")
-        # Increase the window size to 1024x768 for a more spacious layout
-        self.geometry("900x506")
-        
-        container = tk.Frame(self)
-        container.pack(side="top", fill="both", expand=True)
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
-        
-        self.frames = {}
-        for F in (CUListFrame, CUDetailsFrame, FCUActivitiesFrame, CUPartActivitiesFrame):
-            frame = F(container, self)
-            self.frames[F.__name__] = frame
-            frame.grid(row=0, column=0, sticky="nsew")
-        
-        self.show_frame("CUListFrame")
-    
-    def show_frame(self, frame_name):
-        frame = self.frames[frame_name]
-        frame.tkraise()
-        
-    def show_cu_details(self, cu):
-        frame = self.frames["CUDetailsFrame"]
-        frame.set_cu(cu)
-        self.show_frame("CUDetailsFrame")
-    
-    def show_fcu_details(self, fcu):
-        frame = self.frames["FCUActivitiesFrame"]
-        frame.set_fcu(fcu)
-        self.show_frame("FCUActivitiesFrame")
-    
-    def show_cupart_details(self, part):
-        frame = self.frames["CUPartActivitiesFrame"]
-        frame.set_part(part)
-        self.show_frame("CUPartActivitiesFrame")
-        
+@app.route('/create_fcu/<cu_id>', methods=['GET', 'POST'])
+def create_fcu(cu_id):
+    if not os.path.exists(EXCEL_FILE):
+        return "Excel file does not exist.", 404
+
+    df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
+    cu_match = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_match.empty:
+        return f"CU with ID {cu_id} not found.", 404
+    cu = cu_match.iloc[0].to_dict()
+
+    if request.method == 'POST':
+        fcu_name = request.form['fcu_name']
+
+        df_fcu = pd.read_excel(EXCEL_FILE, sheet_name="FCU")
+
+        if not df_fcu.empty:
+            nums = (
+                df_fcu['FCU_ID']
+                  .str.extract(r'FCU(\d+)', expand=False)
+                  .astype(int)
+            )
+            new_num = nums.max() + 1
+        else:
+            new_num = 1
+
+        new_fcu_id = f"FCU{new_num:03}"  
+
+        new_row = pd.DataFrame([{
+            'FCU_ID':   new_fcu_id,
+            'FCU_Name': fcu_name,
+            'CU_ID':    cu_id
+        }])
+        df_fcu = pd.concat([df_fcu, new_row], ignore_index=True)
+
+        with pd.ExcelWriter(EXCEL_FILE,
+                            engine='openpyxl',
+                            mode='a',
+                            if_sheet_exists='replace') as writer:
+            df_fcu.to_excel(writer, sheet_name="FCU", index=False)
+
+        return redirect(url_for('cu_details', cu_id=cu_id))
+
+    return render_template('CREATE pages/create_fcu.html', cu=cu)
+
+@app.route('/create_part/<cu_id>', methods=['GET', 'POST'])
+def create_part(cu_id):
+    if not os.path.exists(EXCEL_FILE):
+        return "Excel file does not exist.", 404
+
+    df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
+    cu_match = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_match.empty:
+        return f"CU with ID {cu_id} not found.", 404
+    cu = cu_match.iloc[0].to_dict()
+
+    if request.method == 'POST':
+        part_name = request.form['part_name']
+
+        df_parts = pd.read_excel(EXCEL_FILE, sheet_name="CU_Parts")
+
+        if not df_parts.empty:
+            nums = (
+                df_parts['Part_ID']
+                        .str.extract(r'CP(\d+)', expand=False)
+                        .astype(int)
+            )
+            new_num = nums.max() + 1
+        else:
+            new_num = 1
+
+        new_part_id = f"CP{new_num:03}"  
+
+        new_row = pd.DataFrame([{
+            'Part_ID':   new_part_id,
+            'CU_ID':     cu_id,
+            'Part_Name': part_name
+        }])
+        df_parts = pd.concat([df_parts, new_row], ignore_index=True)
+
+        with pd.ExcelWriter(EXCEL_FILE,
+                            engine='openpyxl',
+                            mode='a',
+                            if_sheet_exists='replace') as writer:
+            df_parts.to_excel(writer, sheet_name="CU_Parts", index=False)
+
+        return redirect(url_for('cu_details', cu_id=cu_id))
+
+    return render_template('CREATE pages/create_part.html', cu=cu)
+
+@app.route('/create_part_activity/<part_id>', methods=['GET', 'POST'])
+def create_part_activity(part_id):
+    df_parts = read_data("CU_Parts")
+    selected_part = df_parts[df_parts['Part_ID'] == part_id]
+    if selected_part.empty:
+        return "Part not found", 404
+    selected_part = selected_part.iloc[0]
+
+    df_cu = read_data("CU")
+    cu = df_cu[df_cu['CU_ID'] == selected_part['CU_ID']].iloc[0]
+
+    if request.method == 'POST':
+        name = request.form['activity_name']
+        date = request.form['activity_date']
+        desc = request.form['description']
+
+        df_act = read_data("CU_Parts_Activity")
+
+        if not df_act.empty:
+            nums = (
+                df_act['Activity_ID']
+                      .str.extract(r'CPA(\d+)', expand=False)
+                      .astype(int)
+            )
+            new_num = nums.max() + 1
+        else:
+            new_num = 1
+        new_id = f"CPA{new_num:03}"  
+
+        new_row = {
+            'Activity_ID':   new_id,
+            'Part_ID':       part_id,
+            'Activity_Name': name,
+            'Activity_Date': date,
+            'Description':   desc
+        }
+        df_act = pd.concat([df_act, pd.DataFrame([new_row])], ignore_index=True)
+
+        df_act['Activity_Date'] = pd.to_datetime(df_act['Activity_Date']).dt.date
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+                            mode='a', if_sheet_exists='replace') as writer:
+            df_act.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
+
+        return redirect(url_for('cu_part_activities', part_id=part_id))
+
+    return render_template(
+        'CREATE pages/create_part_activity.html',
+        cu=cu,
+        part=selected_part
+    )
+
+@app.route('/create_fcu_activity/<fcu_id>', methods=['GET', 'POST'])
+def create_fcu_activity(fcu_id):
+    df_fcu = read_data("FCU")
+    selected_fcu = df_fcu[df_fcu['FCU_ID'] == fcu_id]
+    if selected_fcu.empty:
+        return "FCU not found", 404
+    selected_fcu = selected_fcu.iloc[0]
+
+    df_cu = read_data("CU")
+    cu = df_cu[df_cu['CU_ID'] == selected_fcu['CU_ID']].iloc[0]
+
+    if request.method == 'POST':
+        name = request.form['activity_name']
+        date = request.form['activity_date']
+        desc = request.form['description']
+
+        df_act = read_data("FCU_Activity")
+
+        if not df_act.empty:
+            nums = (
+                df_act['Activity_ID']
+                      .str.extract(r'FCA(\d+)', expand=False)
+                      .astype(int)
+            )
+            new_num = nums.max() + 1
+        else:
+            new_num = 1
+        new_id = f"FCA{new_num:03}"  
+
+        new_row = {
+            'Activity_ID':   new_id,
+            'FCU_ID':        fcu_id,
+            'Activity_Name': name,
+            'Activity_Date': date,
+            'Description':   desc
+        }
+        df_act = pd.concat([df_act, pd.DataFrame([new_row])], ignore_index=True)
+
+        df_act['Activity_Date'] = pd.to_datetime(df_act['Activity_Date']).dt.date
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+                            mode='a', if_sheet_exists='replace') as writer:
+            df_act.to_excel(writer, sheet_name="FCU_Activity", index=False)
+
+        return redirect(url_for('fcu_activities', fcu_id=fcu_id))
+
+    return render_template(
+        'CREATE pages/create_fcu_activity.html',
+        cu=cu,
+        fcu=selected_fcu
+    )
+
+# =============================================================================
+#  EDIT 
+# =============================================================================
+
+@app.route('/edit_cu/<cu_id>', methods=['GET','POST'])
+def edit_cu(cu_id):
+    df_cu = read_data("CU")
+    selected_cu = df_cu[df_cu['CU_ID'] == cu_id].iloc[0]
+
+    df_parts = read_data("CU_Parts")
+    parts = df_parts[df_parts['CU_ID'] == cu_id].to_dict(orient='records')
+
+    df_fcus = read_data("FCU")
+    fcus = df_fcus[df_fcus['CU_ID'] == cu_id].to_dict(orient='records')
+
+    if request.method == 'POST':
+        cu_name     = request.form['cu_name']
+        cu_location = request.form['cu_location']
+        idx = df_cu.index[df_cu['CU_ID'] == cu_id][0]
+
+        df_cu.at[idx, 'CU_Name']  = cu_name
+        df_cu.at[idx, 'Location'] = cu_location
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as w:
+            df_cu.to_excel(w, sheet_name="CU", index=False)
+
+        return redirect(url_for('edit_cu', cu_id=cu_id))
+
+    return render_template('EDIT pages/edit_cu.html', cu=selected_cu, parts=parts, fcus=fcus)
+
+@app.route('/edit_part_activity/<activity_id>', methods=['GET','POST'])
+def edit_part_activity(activity_id):
+    df_act = read_data("CU_Parts_Activity")
+    matched = df_act[df_act['Activity_ID'] == activity_id]
+    if matched.empty:
+        return f"No activity found with ID {activity_id}", 404
+    act_row = matched.iloc[0]
+
+    part_id = act_row['Part_ID']
+
+    df_parts = read_data("CU_Parts")
+    part_matched = df_parts[df_parts['Part_ID'] == part_id]
+    if part_matched.empty:
+        return f"No part found with ID {part_id}", 404
+    part = part_matched.iloc[0]
+    cu_id = part['CU_ID']
+
+    df_cu = read_data("CU")
+    cu_matched = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_matched.empty:
+        return f"No CU found with ID {cu_id}", 404
+    cu = cu_matched.iloc[0]
+
+    if request.method == 'POST':
+        name = request.form['activity_name']
+        date = request.form['activity_date']
+        desc = request.form['description']
+
+        idx = df_act.index[df_act['Activity_ID'] == activity_id][0]
+        df_act.at[idx, 'Activity_Name']  = name
+        df_act.at[idx, 'Activity_Date']  = date
+        df_act.at[idx, 'Description']    = desc
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df_act.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
+
+        return redirect(url_for('cu_part_activities', part_id=part_id))
+
+    act = act_row.to_dict()
+    return render_template(
+        'EDIT pages/edit_part_activity.html',
+        cu=cu,
+        part=part,
+        part_id=part_id,
+        act=act
+    )
+
+@app.route('/edit_fcu_activity/<activity_id>', methods=['GET','POST'])
+def edit_fcu_activity(activity_id):
+    df_act = read_data("FCU_Activity")
+    matched = df_act[df_act['Activity_ID'] == activity_id]
+    if matched.empty:
+        return f"No activity found with ID {activity_id}", 404
+    act_row = matched.iloc[0]
+
+    fcu_id = act_row['FCU_ID']
+
+    df_fcu = read_data("FCU")
+    fcu_matched = df_fcu[df_fcu['FCU_ID'] == fcu_id]
+    if fcu_matched.empty:
+        return f"No FCU found with ID {fcu_id}", 404
+    fcu = fcu_matched.iloc[0]
+    cu_id = fcu['CU_ID']
+
+    df_cu = read_data("CU")
+    cu_matched = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_matched.empty:
+        return f"No CU found with ID {cu_id}", 404
+    cu = cu_matched.iloc[0]
+
+    if request.method == 'POST':
+        name = request.form['activity_name']
+        date = request.form['activity_date']
+        desc = request.form['description']
+
+        idx = df_act.index[df_act['Activity_ID'] == activity_id][0]
+        df_act.at[idx, 'Activity_Name']  = name
+        df_act.at[idx, 'Activity_Date']  = date
+        df_act.at[idx, 'Description']    = desc
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df_act.to_excel(writer, sheet_name="FCU_Activity", index=False)
+
+        return redirect(url_for('fcu_activities', fcu_id=fcu_id))
+
+    act = act_row.to_dict()
+    return render_template(
+        'EDIT pages/edit_fcu_activity.html',
+        cu=cu,
+        fcu=fcu,
+        fcu_id=fcu_id,
+        act=act
+    )
+
+@app.route('/edit_part/<part_id>', methods=['GET','POST'])
+def edit_part(part_id):
+    df_parts = read_data("CU_Parts")
+    matched = df_parts[df_parts['Part_ID'] == part_id]
+    if matched.empty:
+        return f"No part found with ID {part_id}", 404
+    part_row = matched.iloc[0]
+    part = part_row.to_dict()
+    cu_id = part_row['CU_ID']
+
+    df_cu = read_data("CU")
+    cu_matched = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_matched.empty:
+        return f"No CU found with ID {cu_id}", 404
+    cu = cu_matched.iloc[0].to_dict()
+
+    if request.method == 'POST':
+        new_name = request.form['part_name']
+        idx = df_parts.index[df_parts['Part_ID'] == part_id][0]
+        df_parts.at[idx, 'Part_Name'] = new_name
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df_parts.to_excel(writer, sheet_name="CU_Parts", index=False)
+
+        return redirect(url_for('cu_details', cu_id=cu_id))
+
+    return render_template(
+        'EDIT pages/edit_part.html',
+        cu=cu,
+        part=part
+    )
+
+@app.route('/edit_fcu/<fcu_id>', methods=['GET','POST'])
+def edit_fcu(fcu_id):
+    df_fcu = read_data("FCU")
+    matched = df_fcu[df_fcu['FCU_ID'] == fcu_id]
+    if matched.empty:
+        return f"No FCU found with ID {fcu_id}", 404
+    fcu_row = matched.iloc[0]
+    fcu = fcu_row.to_dict()
+    cu_id = fcu_row['CU_ID']
+
+    df_cu = read_data("CU")
+    cu_matched = df_cu[df_cu['CU_ID'] == cu_id]
+    if cu_matched.empty:
+        return f"No CU found with ID {cu_id}", 404
+    cu = cu_matched.iloc[0].to_dict()
+
+    if request.method == 'POST':
+        new_name = request.form['fcu_name']
+        idx = df_fcu.index[df_fcu['FCU_ID'] == fcu_id][0]
+        df_fcu.at[idx, 'FCU_Name'] = new_name
+
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+                             mode='a', if_sheet_exists='replace') as w:
+            df_fcu.to_excel(w, sheet_name="FCU", index=False)
+
+        return redirect(url_for('cu_details', cu_id=cu_id))
+
+    return render_template(
+        'EDIT pages/edit_fcu.html',
+        fcu=fcu,
+        cu=cu
+    )
+
+# =============================================================================
+#  READ 
+# =============================================================================
+
+@app.route('/cu/<cu_id>')
+def cu_details(cu_id):
+    # 1. Load CU, Parts, FCUs
+    df_cu       = read_data("CU")
+    selected_cu = df_cu[df_cu['CU_ID'] == cu_id].iloc[0]
+
+    df_parts    = read_data("CU_Parts")
+    parts       = df_parts[df_parts['CU_ID'] == cu_id].to_dict(orient='records')
+    part_ids    = df_parts[df_parts['CU_ID'] == cu_id]['Part_ID'].tolist()
+
+    df_fcus     = read_data("FCU")
+    fcus        = df_fcus[df_fcus['CU_ID'] == cu_id].to_dict(orient='records')
+    fcu_ids     = df_fcus[df_fcus['CU_ID'] == cu_id]['FCU_ID'].tolist()
+
+    def lookup_part_name(pid):
+        return next((p['Part_Name'] for p in parts if p['Part_ID'] == pid), '')
+
+    def lookup_fcu_name(fid):
+        return next((f['FCU_Name'] for f in fcus if f['FCU_ID'] == fid), '')
+
+    raw_part = read_data("CU_Parts_Activity")
+    raw_part = raw_part[raw_part['Part_ID'].isin(part_ids)].to_dict(orient='records')
+
+    raw_fcu  = read_data("FCU_Activity")
+    raw_fcu  = raw_fcu[raw_fcu['FCU_ID'].isin(fcu_ids)].to_dict(orient='records')
+
+    activities = []
+
+    for act in raw_part + raw_fcu:
+        dt = act.get('Activity_Date')
+        if isinstance(dt, datetime):
+            sort_key = dt
+        else:
+            sort_key = datetime.strptime(str(dt), '%d-%m-%Y')
+        act['_sort_key']     = sort_key
+        act['Activity_Date'] = sort_key.strftime('%d-%m-%Y')
+        if 'Part_ID' in act:
+            act['Source_Type'] = 'Part'
+            act['Source_Name'] = lookup_part_name(act['Part_ID'])
+        else:
+            act['Source_Type'] = 'FCU'
+            act['Source_Name'] = lookup_fcu_name(act['FCU_ID'])
+        activities.append(act)
+
+    activities.sort(key=lambda x: x['_sort_key'], reverse=True)
+
+    activities = activities[:5]
+
+    for act in activities:
+        act.pop('_sort_key', None)
+
+    return render_template(
+        'READ pages/cu_details.html',
+        cu=selected_cu,
+        parts=parts,
+        fcus=fcus,
+        recent_activities=activities
+    )
+
+@app.route('/fcu/<fcu_id>')
+def fcu_activities(fcu_id):
+    df_fcu = read_data("FCU")
+    selected_fcu = df_fcu[df_fcu['FCU_ID'] == fcu_id].iloc[0]
+
+    df_cu = read_data("CU")
+    cu = df_cu[df_cu['CU_ID'] == selected_fcu['CU_ID']].iloc[0]
+
+    df_activities = read_data("FCU_Activity")
+    activities_raw = df_activities[df_activities['FCU_ID'] == fcu_id].to_dict(orient='records')
+    activities = []
+    for act in activities_raw:
+        dt = act.get('Activity_Date')
+        if isinstance(dt, datetime):
+            act['Activity_Date'] = dt.strftime('%d-%m-%Y')
+            sort_key = dt
+        else:
+            sort_key = datetime.strptime(str(dt), '%d-%m-%Y')
+            act['Activity_Date'] = sort_key.strftime('%d-%m-%Y')
+        act['_sort_key'] = sort_key
+        activities.append(act)
+
+    activities.sort(key=lambda x: x['_sort_key'], reverse=True)
+
+    for act in activities:
+        act.pop('_sort_key', None)
+
+    return render_template(
+        'READ pages/fcu_activities.html',
+        cu=cu,
+        fcu=selected_fcu,
+        activities=activities
+    )
+
+@app.route('/part/<part_id>')
+def cu_part_activities(part_id):
+    df_part = read_data("CU_Parts")
+    selected_part = df_part[df_part['Part_ID'] == part_id].iloc[0]
+
+    df_cu = read_data("CU")
+    cu = df_cu[df_cu['CU_ID'] == selected_part['CU_ID']].iloc[0]
+
+    df_activities = read_data("CU_Parts_Activity")
+    activities_raw = df_activities[df_activities['Part_ID'] == part_id].to_dict(orient='records')
+    activities = []
+    for act in activities_raw:
+        dt = act.get('Activity_Date')
+        if isinstance(dt, datetime):
+            act['Activity_Date'] = dt.strftime('%d-%m-%Y')
+            sort_key = dt
+        else:
+            sort_key = datetime.strptime(str(dt), '%d-%m-%Y')
+            act['Activity_Date'] = sort_key.strftime('%d-%m-%Y')
+        act['_sort_key'] = sort_key
+        activities.append(act)
+
+    activities.sort(key=lambda x: x['_sort_key'], reverse=True)
+
+    for act in activities:
+        act.pop('_sort_key', None)
+
+    return render_template(
+        'READ pages/cu_part_activities.html',
+        cu=cu,
+        part=selected_part,
+        activities=activities
+    )
+
+# =============================================================================
+#  DELETE
+# =============================================================================
+
+@app.route('/delete_part_activity/<activity_id>')
+def delete_part_activity(activity_id):
+    df_act = read_data("CU_Parts_Activity")
+    matched = df_act[df_act['Activity_ID'] == activity_id]
+    if matched.empty:
+        return f"No activity found with ID {activity_id}", 404
+    part_id = matched.iloc[0]['Part_ID']
+
+    df_parts = read_data("CU_Parts")
+    part_matched = df_parts[df_parts['Part_ID'] == part_id].iloc[0]
+
+    df_new = df_act[df_act['Activity_ID'] != activity_id]
+
+    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        df_new.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
+
+    return redirect(url_for('cu_part_activities', part_id=part_id))
+
+@app.route('/delete_fcu_activity/<activity_id>')
+def delete_fcu_activity(activity_id):
+    df_act = read_data("FCU_Activity")
+    matched = df_act[df_act['Activity_ID'] == activity_id]
+    if matched.empty:
+        return f"No FCU activity found with ID {activity_id}", 404
+
+    fcu_id = matched.iloc[0]['FCU_ID']
+
+    df_fcu = read_data("FCU")
+    fcu_matched = df_fcu[df_fcu['FCU_ID'] == fcu_id]
+    if fcu_matched.empty:
+        return f"FCU not found with ID {fcu_id}", 404
+    cu_id = fcu_matched.iloc[0]['CU_ID']
+
+    df_new = df_act[df_act['Activity_ID'] != activity_id]
+
+    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        df_new.to_excel(writer, sheet_name="FCU_Activity", index=False)
+
+    return redirect(url_for('fcu_activities', fcu_id=fcu_id))
+
+
+@app.route('/delete_part/<part_id>')
+def delete_part(part_id):
+    df_parts     = read_data("CU_Parts")
+    df_part_acts = read_data("CU_Parts_Activity")    
+
+    matched = df_parts[df_parts['Part_ID'] == part_id]
+    if matched.empty:
+        return f"No part found with ID {part_id}", 404
+
+    cu_id = matched.iloc[0]['CU_ID']
+
+    df_parts_new     = df_parts    [df_parts   ['Part_ID'] != part_id]
+    df_part_acts_new = df_part_acts[df_part_acts['Part_ID'] != part_id]
+
+    with pd.ExcelWriter(EXCEL_FILE,
+                        engine='openpyxl',
+                        mode='a',
+                        if_sheet_exists='replace') as writer:
+        df_parts_new    .to_excel(writer, sheet_name="CU_Parts",   index=False)
+        df_part_acts_new.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
+
+    return redirect(url_for('cu_details', cu_id=cu_id))
+
+@app.route('/delete_fcu/<fcu_id>')
+def delete_fcu(fcu_id):
+
+    df_fcu      = read_data("FCU")
+    df_fcu_acts = read_data("FCU_Activity")  
+
+    matched = df_fcu[df_fcu['FCU_ID'] == fcu_id]
+    if matched.empty:
+        return f"No FCU found with ID {fcu_id}", 404
+
+    cu_id = matched.iloc[0]['CU_ID']
+
+    df_fcu_new = df_fcu[df_fcu['FCU_ID'] != fcu_id]
+
+    df_fcu_acts_new = df_fcu_acts[df_fcu_acts['FCU_ID'] != fcu_id]
+
+    with pd.ExcelWriter(EXCEL_FILE,
+                        engine='openpyxl',
+                        mode='a',
+                        if_sheet_exists='replace') as writer:
+        df_fcu_new      .to_excel(writer, sheet_name="FCU",          index=False)
+        df_fcu_acts_new .to_excel(writer, sheet_name="FCU_Activity", index=False)
+
+    return redirect(url_for('cu_details', cu_id=cu_id))
+
+@app.route('/delete_cu/<cu_id>')
+def delete_cu(cu_id):
+    df_cu        = read_data("CU")
+    df_fcus      = read_data("FCU")
+    df_parts     = read_data("CU_Parts")
+    df_fcu_acts  = read_data("FCU_Activity")   
+    df_part_acts = read_data("CU_Parts_Activity")   
+
+    if df_cu[df_cu['CU_ID'] == cu_id].empty:
+        return f"No CU found with ID {cu_id}", 404
+
+    df_cu_new = df_cu[df_cu['CU_ID'] != cu_id]
+
+    to_delete_fcu_ids  = df_fcus.loc[df_fcus['CU_ID'] == cu_id, 'FCU_ID'].tolist()
+    to_delete_part_ids = df_parts.loc[df_parts['CU_ID'] == cu_id, 'Part_ID'].tolist()
+
+    df_fcus_new  = df_fcus[df_fcus['CU_ID']  != cu_id]
+    df_parts_new = df_parts[df_parts['CU_ID'] != cu_id]
+
+    df_fcu_acts_new  = df_fcu_acts[~df_fcu_acts['FCU_ID'].isin(to_delete_fcu_ids)]
+    df_part_acts_new = df_part_acts[~df_part_acts['Part_ID'].isin(to_delete_part_ids)]
+
+    with pd.ExcelWriter(EXCEL_FILE,
+                        engine='openpyxl',
+                        mode='a',
+                        if_sheet_exists='replace') as writer:
+        df_cu_new       .to_excel(writer, sheet_name="CU",           index=False)
+        df_fcus_new     .to_excel(writer, sheet_name="FCU",          index=False)
+        df_parts_new    .to_excel(writer, sheet_name="CU_Parts",         index=False)
+        df_fcu_acts_new .to_excel(writer, sheet_name="FCU_Activity",  index=False)
+        df_part_acts_new.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
+
+    return redirect(url_for('cu_list'))
+
 if __name__ == '__main__':
-    app = MainApp()
-    app.mainloop()
+    app.run(debug=True)
