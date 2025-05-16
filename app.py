@@ -2,8 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for
 from datetime import datetime
 import os, pandas as pd
 
-#EXCEL_FILE = r'C:\LocalDB\CKENG.xlsx'
-EXCEL_FILE = 'LocalDB.xlsx'
+EXCEL_FILE = r'C:\LocalDB\CKENG.xlsx'
+#EXCEL_FILE = 'LocalDB.xlsx'
 
 def read_data(sheet_name):
     if os.path.exists(EXCEL_FILE):
@@ -564,28 +564,43 @@ def fcu_activities(fcu_id):
 
 @app.route('/part/<part_id>')
 def cu_part_activities(part_id):
+    # — load your part & CU as before —
     df_part = read_data("CU_Parts")
     selected_part = df_part[df_part['Part_ID'] == part_id].iloc[0]
 
     df_cu = read_data("CU")
     cu = df_cu[df_cu['CU_ID'] == selected_part['CU_ID']].iloc[0]
 
-    df_activities = read_data("CU_Parts_Activity")
-    activities_raw = df_activities[df_activities['Part_ID'] == part_id].to_dict(orient='records')
+    # — load activities —
+    df_activities     = read_data("CU_Parts_Activity")
+    activities_raw    = df_activities[df_activities['Part_ID'] == part_id] \
+                        .to_dict(orient='records')
+
     activities = []
     for act in activities_raw:
-        dt = act.get('Activity_Date')
-        if isinstance(dt, datetime):
-            act['Activity_Date'] = dt.strftime('%d-%m-%Y')
-            sort_key = dt
+        raw = act.get('Activity_Date')
+        # ensure we have a datetime (if it’s a string, parse it)
+        if isinstance(raw, datetime):
+            dt = raw
         else:
-            sort_key = datetime.strptime(str(dt), '%d-%m-%Y')
-            act['Activity_Date'] = sort_key.strftime('%d-%m-%Y')
-        act['_sort_key'] = sort_key
+            try:
+                # assume your stored string is "DD-MM-YYYY"
+                dt = datetime.strptime(str(raw), '%d-%m-%Y')
+            except Exception:
+                dt = None
+
+        # 1) human-friendly display
+        act['date_display'] = dt.strftime('%d-%m-%Y') if dt else ''
+
+        # 2) ISO string for the <input type="date">
+        act['date_input']   = dt.strftime('%Y-%m-%d') if dt else ''
+
+        # sorting key (None → very old)
+        act['_sort_key'] = dt or datetime.min
         activities.append(act)
 
+    # sort descending
     activities.sort(key=lambda x: x['_sort_key'], reverse=True)
-
     for act in activities:
         act.pop('_sort_key', None)
 
@@ -595,7 +610,6 @@ def cu_part_activities(part_id):
         part=selected_part,
         activities=activities
     )
-
 # =============================================================================
 #  DELETE
 # =============================================================================
