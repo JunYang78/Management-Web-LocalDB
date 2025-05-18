@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ part['Part_Name'] }} Activities</title>
+  <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f4f7fa;
+      font-family: Arial, sans-serif;
+    }
+    .container { margin-top: 30px; }
+    .card-header { background-color: #007bff; color: white; }
+    .list-group-item:hover { background-color: #f1f1f1; }
+
+    /* Highlight editing or adding */
+    .list-group-item.editing,
+    .list-group-item.adding {
+      background-color: #e8f4fd;
+    }
+
+    /* Common form styling for add/edit */
+    .inline-form {
+      background-color: #fff;
+      padding: 1rem;
+      border: 1px solid #dee2e6;
+      border-radius: .5rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container my-4">
+    <div class="mb-4">
+      <h1>{{ cu['CU_Name'] }}</h1>
+      <p class="text-muted">Part: {{ part['Part_Name'] }}</p>
+    </div>
+
+    <!-- Add Activity trigger -->
+    <div class="mb-3">
+      <button id="add-btn" class="btn btn-success">
+        Add Activity
+      </button>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="mb-0">Part Activities</h5>
+      </div>
+      <div class="card-body">
+        {% if activities %}
+        <ul class="list-group">
+
+          <!-- INLINE ADD ROW (hidden by default) -->
+          <li class="list-group-item adding d-none" id="add-activity">
+            <form class="inline-form" method="POST"
+                  action="{{ url_for('create_part_activity', part_id=part['Part_ID']) }}">
+              <div class="mb-2">
+                <label for="new-name" class="form-label">Activity Name</label>
+                <input type="text" id="new-name" name="activity_name"
+                       class="form-control" required>
+              </div>
+              <div class="mb-2">
+                <label for="new-date" class="form-label">Activity Date</label>
+                <input type="date" id="new-date" name="activity_date"
+                       class="form-control" required>
+              </div>
+              <div class="mb-2">
+                <label for="new-desc" class="form-label">Description</label>
+                <textarea id="new-desc" name="description" rows="2"
+                          class="form-control"
+                          placeholder="No description"></textarea>
+              </div>
+              <div class="d-flex justify-content-between mt-2">
+                <button type="button" class="btn btn-secondary" id="cancel-add">
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-success">
+                  Save
+                </button>
+              </div>
+            </form>
+          </li>
+
+          <!-- EXISTING ACTIVITIES -->
+          {% for act in activities %}
+          <li class="list-group-item" id="activity-{{ act.Activity_ID }}">
+            <!-- VIEW MODE -->
+            <div class="view-mode d-flex justify-content-between">
+              <div class="flex-grow-1">
+                <strong>{{ act.Activity_Name }}</strong>
+                <span class="text-muted">on {{ act.date_display }}</span>
+                <p class="mb-0">
+                  {{ act.Description
+                     or '<small class="text-muted">No description</small>'|safe }}
+                </p>
+              </div>
+              <div class="btn-group btn-group-sm ms-3">
+                <button type="button" class="btn btn-outline-primary edit-btn">
+                  Edit
+                </button>
+                <button type="button" class="btn btn-outline-danger delete-btn">
+                  Delete
+                </button>
+              </div>
+            </div>
+
+            <!-- EDIT MODE (hidden) -->
+            <form class="inline-form edit-mode d-none mt-3" method="POST"
+                  action="{{ url_for('edit_part_activity', activity_id=act.Activity_ID) }}">
+              <div class="mb-2">
+                <label for="name-{{ act.Activity_ID }}" class="form-label">
+                  Activity Name
+                </label>
+                <input type="text"
+                       id="name-{{ act.Activity_ID }}"
+                       name="activity_name"
+                       class="form-control"
+                       value="{{ act.Activity_Name }}"
+                       required>
+              </div>
+              <div class="mb-2">
+                <label for="date-{{ act.Activity_ID }}" class="form-label">
+                  Activity Date
+                </label>
+                <input type="date"
+                       id="date-{{ act.Activity_ID }}"
+                       name="activity_date"
+                       class="form-control"
+                       value="{{ act.date_input }}"
+                       required>
+              </div>
+              <div class="mb-2">
+                <label for="desc-{{ act.Activity_ID }}" class="form-label">
+                  Description
+                </label>
+                <textarea id="desc-{{ act.Activity_ID }}"
+                          name="description"
+                          rows="2"
+                          class="form-control"
+                >{{ act.Description }}</textarea>
+              </div>
+              <div class="d-flex justify-content-between mt-2">
+                <button type="button" class="btn btn-secondary cancel-edit">
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-success">
+                  Save
+                </button>
+              </div>
+            </form>
+          </li>
+          {% endfor %}
+
+        </ul>
+        {% else %}
+          <p class="text-muted mb-0">No activities found for this part.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="text-center">
+      <a href="{{ url_for('cu_details', cu_id=cu['CU_ID']) }}"
+         class="btn btn-primary">
+        Back to CU Details
+      </a>
+    </div>
+  </div>
+
+  <script src="/static/js/popper.min.js"></script>
+  <script src="/static/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Toggle Add Form
+    const addBtn    = document.getElementById('add-btn');
+    const addItem   = document.getElementById('add-activity');
+    const cancelAdd = document.getElementById('cancel-add');
+
+    addBtn.addEventListener('click', () => {
+      addItem.classList.remove('d-none');
+      addItem.classList.add('editing');
+      addBtn.disabled = true;
+    });
+    cancelAdd.addEventListener('click', () => {
+      addItem.querySelector('form').reset();
+      addItem.classList.add('d-none');
+      addItem.classList.remove('editing');
+      addBtn.disabled = false;
+    });
+
+    // Toggle Edit Forms & Delete
+    document.querySelectorAll('.list-group-item').forEach(li => {
+      const view    = li.querySelector('.view-mode');
+      const edit    = li.querySelector('.edit-mode');
+      const btnEdit = li.querySelector('.edit-btn');
+      const btnCancel = li.querySelector('.cancel-edit');
+      const btnDelete = li.querySelector('.delete-btn');
+
+      if (btnEdit) {
+        btnEdit.addEventListener('click', () => {
+          view.classList.add('d-none');
+          edit.classList.remove('d-none');
+          li.classList.add('editing');
+        });
+      }
+      if (btnCancel) {
+        btnCancel.addEventListener('click', () => {
+          edit.classList.add('d-none');
+          view.classList.remove('d-none');
+          li.classList.remove('editing');
+        });
+      }
+      if (btnDelete) {
+        btnDelete.addEventListener('click', () => {
+          if (confirm('Delete this activity?')) {
+            window.location.href = 
+              "{{ url_for('delete_part_activity', activity_id='') }}"
+              + li.id.replace('activity-', '');
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>

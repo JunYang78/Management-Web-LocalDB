@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create New CU</title>
+  <link href="/static/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #f4f7fa;
+      font-family: Arial, sans-serif;
+    }
+    .card {
+      border-radius: 0.75rem;
+    }
+    .card-header {
+      background-color: #007bff;
+      color: white;
+      border-top-left-radius: 0.75rem;
+      border-top-right-radius: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container mt-5">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8">
+        <div class="card shadow-sm">
+          <div class="card-header">
+            <h5 class="mb-0">Create New CU</h5>
+          </div>
+          <div class="card-body">
+            <form method="POST">
+              <div class="mb-3">
+                <label for="cu_name" class="form-label">CU Name</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="cu_name"
+                  name="cu_name"
+                  required
+                />
+              </div>
+              <div class="mb-3">
+                <label for="cu_location" class="form-label">CU Location</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="cu_location"
+                  name="cu_location"
+                  required
+                />
+              </div>
+              <div class="d-flex justify-content-between">
+                <button type="submit" class="btn btn-success">
+                  Create CU
+                </button>
+                <a
+                  href="{{ url_for('cu_list') }}"
+                  class="btn btn-secondary"
+                >
+                  Back to CU List
+                </a>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

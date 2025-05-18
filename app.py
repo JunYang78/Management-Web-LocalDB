@@ -1,20 +1,32 @@
 from flask import Flask, render_template, request, redirect, url_for
 from datetime import datetime
 import os, pandas as pd
+import json
 
-EXCEL_FILE = r'C:\LocalDB\CKENG.xlsx'
-#EXCEL_FILE = 'LocalDB.xlsx'
+BASE_DIR    = os.path.dirname(__file__)
+CONFIG_JSON = os.path.join(BASE_DIR, 'file_config.json')
+DEFAULT_EXCEL = r'C:\LocalDB\CKENG.xlsx'
+
+def load_excel_path():
+    if os.path.exists(CONFIG_JSON):
+        try:
+            cfg = json.load(open(CONFIG_JSON, 'r', encoding='utf-8'))
+            path = cfg.get('data_file')
+            if path and os.path.exists(path):
+                return path
+        except Exception:
+            pass
+    return DEFAULT_EXCEL
 
 def read_data(sheet_name):
-    if os.path.exists(EXCEL_FILE):
-        try:
-            df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name)
-        except Exception as e:
-            print(f"Error reading {sheet_name}: {e}")
-            df = pd.DataFrame()
-    else:
-        df = pd.DataFrame()
-    return df
+    path = load_excel_path()   
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        return pd.read_excel(path, sheet_name=sheet_name)
+    except Exception as e:
+        print(f"Error reading {sheet_name} from {path}: {e}")
+        return pd.DataFrame()
 
 app = Flask(__name__)
 
@@ -42,11 +54,11 @@ def create_cu():
         cu_name     = request.form['cu_name']
         cu_location = request.form['cu_location']
 
-        if not os.path.exists(EXCEL_FILE):
+        if not os.path.exists(load_excel_path()):
             return "Excel file does not exist.", 404
 
         try:
-            df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
+            df_cu = pd.read_excel(load_excel_path(), sheet_name="CU")
 
             if not df_cu.empty:
                 nums = (
@@ -67,7 +79,7 @@ def create_cu():
             })
             df_cu = pd.concat([df_cu, new_cu], ignore_index=True)
 
-            with pd.ExcelWriter(EXCEL_FILE,
+            with pd.ExcelWriter(load_excel_path(),
                                 engine='openpyxl',
                                 mode='a',
                                 if_sheet_exists='replace') as writer:
@@ -84,10 +96,10 @@ def create_cu():
 
 @app.route('/create_fcu/<cu_id>', methods=['GET', 'POST'])
 def create_fcu(cu_id):
-    if not os.path.exists(EXCEL_FILE):
+    if not os.path.exists(load_excel_path()):
         return "Excel file does not exist.", 404
 
-    df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
+    df_cu = pd.read_excel(load_excel_path(), sheet_name="CU")
     cu_match = df_cu[df_cu['CU_ID'] == cu_id]
     if cu_match.empty:
         return f"CU with ID {cu_id} not found.", 404
@@ -96,7 +108,7 @@ def create_fcu(cu_id):
     if request.method == 'POST':
         fcu_name = request.form['fcu_name']
 
-        df_fcu = pd.read_excel(EXCEL_FILE, sheet_name="FCU")
+        df_fcu = pd.read_excel(load_excel_path(), sheet_name="FCU")
 
         if not df_fcu.empty:
             nums = (
@@ -117,7 +129,7 @@ def create_fcu(cu_id):
         }])
         df_fcu = pd.concat([df_fcu, new_row], ignore_index=True)
 
-        with pd.ExcelWriter(EXCEL_FILE,
+        with pd.ExcelWriter(load_excel_path(),
                             engine='openpyxl',
                             mode='a',
                             if_sheet_exists='replace') as writer:
@@ -129,10 +141,10 @@ def create_fcu(cu_id):
 
 @app.route('/create_part/<cu_id>', methods=['GET', 'POST'])
 def create_part(cu_id):
-    if not os.path.exists(EXCEL_FILE):
+    if not os.path.exists(load_excel_path()):
         return "Excel file does not exist.", 404
 
-    df_cu = pd.read_excel(EXCEL_FILE, sheet_name="CU")
+    df_cu = pd.read_excel(load_excel_path(), sheet_name="CU")
     cu_match = df_cu[df_cu['CU_ID'] == cu_id]
     if cu_match.empty:
         return f"CU with ID {cu_id} not found.", 404
@@ -141,7 +153,7 @@ def create_part(cu_id):
     if request.method == 'POST':
         part_name = request.form['part_name']
 
-        df_parts = pd.read_excel(EXCEL_FILE, sheet_name="CU_Parts")
+        df_parts = pd.read_excel(load_excel_path(), sheet_name="CU_Parts")
 
         if not df_parts.empty:
             nums = (
@@ -162,7 +174,7 @@ def create_part(cu_id):
         }])
         df_parts = pd.concat([df_parts, new_row], ignore_index=True)
 
-        with pd.ExcelWriter(EXCEL_FILE,
+        with pd.ExcelWriter(load_excel_path(),
                             engine='openpyxl',
                             mode='a',
                             if_sheet_exists='replace') as writer:
@@ -212,7 +224,7 @@ def create_part_activity(part_id):
 
         df_act['Activity_Date'] = pd.to_datetime(df_act['Activity_Date']).dt.date
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl',
                             mode='a', if_sheet_exists='replace') as writer:
             df_act.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
 
@@ -264,7 +276,7 @@ def create_fcu_activity(fcu_id):
 
         df_act['Activity_Date'] = pd.to_datetime(df_act['Activity_Date']).dt.date
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl',
                             mode='a', if_sheet_exists='replace') as writer:
             df_act.to_excel(writer, sheet_name="FCU_Activity", index=False)
 
@@ -299,10 +311,10 @@ def edit_cu(cu_id):
         df_cu.at[idx, 'CU_Name']  = cu_name
         df_cu.at[idx, 'Location'] = cu_location
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as w:
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as w:
             df_cu.to_excel(w, sheet_name="CU", index=False)
 
-        return redirect(url_for('edit_cu', cu_id=cu_id))
+        return redirect(url_for('cu_details', cu_id=cu_id))
 
     return render_template('EDIT pages/edit_cu.html', cu=selected_cu, parts=parts, fcus=fcus)
 
@@ -339,7 +351,7 @@ def edit_part_activity(activity_id):
         df_act.at[idx, 'Activity_Date']  = date
         df_act.at[idx, 'Description']    = desc
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
             df_act.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
 
         return redirect(url_for('cu_part_activities', part_id=part_id))
@@ -386,7 +398,7 @@ def edit_fcu_activity(activity_id):
         df_act.at[idx, 'Activity_Date']  = date
         df_act.at[idx, 'Description']    = desc
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
             df_act.to_excel(writer, sheet_name="FCU_Activity", index=False)
 
         return redirect(url_for('fcu_activities', fcu_id=fcu_id))
@@ -421,7 +433,7 @@ def edit_part(part_id):
         idx = df_parts.index[df_parts['Part_ID'] == part_id][0]
         df_parts.at[idx, 'Part_Name'] = new_name
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
             df_parts.to_excel(writer, sheet_name="CU_Parts", index=False)
 
         return redirect(url_for('cu_details', cu_id=cu_id))
@@ -453,7 +465,7 @@ def edit_fcu(fcu_id):
         idx = df_fcu.index[df_fcu['FCU_ID'] == fcu_id][0]
         df_fcu.at[idx, 'FCU_Name'] = new_name
 
-        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl',
+        with pd.ExcelWriter(load_excel_path(), engine='openpyxl',
                              mode='a', if_sheet_exists='replace') as w:
             df_fcu.to_excel(w, sheet_name="FCU", index=False)
 
@@ -538,20 +550,26 @@ def fcu_activities(fcu_id):
 
     df_activities = read_data("FCU_Activity")
     activities_raw = df_activities[df_activities['FCU_ID'] == fcu_id].to_dict(orient='records')
+
     activities = []
     for act in activities_raw:
-        dt = act.get('Activity_Date')
-        if isinstance(dt, datetime):
-            act['Activity_Date'] = dt.strftime('%d-%m-%Y')
-            sort_key = dt
+        raw = act.get('Activity_Date')
+        if isinstance(raw, datetime):
+            dt = raw
         else:
-            sort_key = datetime.strptime(str(dt), '%d-%m-%Y')
-            act['Activity_Date'] = sort_key.strftime('%d-%m-%Y')
-        act['_sort_key'] = sort_key
+            try:
+                dt = datetime.strptime(str(raw), '%d-%m-%Y')
+            except Exception:
+                dt = None
+
+        act['date_display'] = dt.strftime('%d-%m-%Y') if dt else ''
+
+        act['date_input']   = dt.strftime('%Y-%m-%d') if dt else ''
+
+        act['_sort_key'] = dt or datetime.min
         activities.append(act)
 
     activities.sort(key=lambda x: x['_sort_key'], reverse=True)
-
     for act in activities:
         act.pop('_sort_key', None)
 
@@ -579,27 +597,21 @@ def cu_part_activities(part_id):
     activities = []
     for act in activities_raw:
         raw = act.get('Activity_Date')
-        # ensure we have a datetime (if it’s a string, parse it)
         if isinstance(raw, datetime):
             dt = raw
         else:
             try:
-                # assume your stored string is "DD-MM-YYYY"
                 dt = datetime.strptime(str(raw), '%d-%m-%Y')
             except Exception:
                 dt = None
 
-        # 1) human-friendly display
         act['date_display'] = dt.strftime('%d-%m-%Y') if dt else ''
 
-        # 2) ISO string for the <input type="date">
         act['date_input']   = dt.strftime('%Y-%m-%d') if dt else ''
 
-        # sorting key (None → very old)
         act['_sort_key'] = dt or datetime.min
         activities.append(act)
 
-    # sort descending
     activities.sort(key=lambda x: x['_sort_key'], reverse=True)
     for act in activities:
         act.pop('_sort_key', None)
@@ -627,7 +639,7 @@ def delete_part_activity(activity_id):
 
     df_new = df_act[df_act['Activity_ID'] != activity_id]
 
-    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+    with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
         df_new.to_excel(writer, sheet_name="CU_Parts_Activity", index=False)
 
     return redirect(url_for('cu_part_activities', part_id=part_id))
@@ -649,7 +661,7 @@ def delete_fcu_activity(activity_id):
 
     df_new = df_act[df_act['Activity_ID'] != activity_id]
 
-    with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+    with pd.ExcelWriter(load_excel_path(), engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
         df_new.to_excel(writer, sheet_name="FCU_Activity", index=False)
 
     return redirect(url_for('fcu_activities', fcu_id=fcu_id))
@@ -669,7 +681,7 @@ def delete_part(part_id):
     df_parts_new     = df_parts    [df_parts   ['Part_ID'] != part_id]
     df_part_acts_new = df_part_acts[df_part_acts['Part_ID'] != part_id]
 
-    with pd.ExcelWriter(EXCEL_FILE,
+    with pd.ExcelWriter(load_excel_path(),
                         engine='openpyxl',
                         mode='a',
                         if_sheet_exists='replace') as writer:
@@ -694,7 +706,7 @@ def delete_fcu(fcu_id):
 
     df_fcu_acts_new = df_fcu_acts[df_fcu_acts['FCU_ID'] != fcu_id]
 
-    with pd.ExcelWriter(EXCEL_FILE,
+    with pd.ExcelWriter(load_excel_path(),
                         engine='openpyxl',
                         mode='a',
                         if_sheet_exists='replace') as writer:
@@ -725,7 +737,7 @@ def delete_cu(cu_id):
     df_fcu_acts_new  = df_fcu_acts[~df_fcu_acts['FCU_ID'].isin(to_delete_fcu_ids)]
     df_part_acts_new = df_part_acts[~df_part_acts['Part_ID'].isin(to_delete_part_ids)]
 
-    with pd.ExcelWriter(EXCEL_FILE,
+    with pd.ExcelWriter(load_excel_path(),
                         engine='openpyxl',
                         mode='a',
                         if_sheet_exists='replace') as writer:
